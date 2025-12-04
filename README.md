@@ -44,7 +44,7 @@ git clone https://github.com/MOAKIEE/haji-timetable.git
 
 ## 更新公告
 
-### v0.3beta (2024-12-04)
+### v0.3beta (2025-12-04)
 - ✨ 新增多课表管理功能
 - ✨ 新增设置界面（常规设置、颜色设置、作息时间设置、关于）
 - ✨ 新增页面切换动画效果
