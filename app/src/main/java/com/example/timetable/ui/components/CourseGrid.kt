@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.timetable.data.model.Course
 import com.example.timetable.data.model.SectionTime
+import com.example.timetable.utils.ScreenConfig
+import com.example.timetable.utils.rememberScreenConfig
 
 // 显示段数据：可能是单课程或冲突组
 @Stable
@@ -111,6 +113,7 @@ fun CourseGrid(
     courseColor: Color,
     onCourseClick: (List<Course>) -> Unit
 ) {
+    val screenConfig = rememberScreenConfig()
     val maxDay = if (showWeekends) 7 else (if (weekStartDay == 0) 6 else 5)
     val cellHeight = cellHeightDp.dp
     val totalHeight = cellHeight * 10
@@ -137,7 +140,8 @@ fun CourseGrid(
             timeSlots = timeSlots,
             cellHeight = cellHeight,
             backgroundColor = backgroundColor,
-            fontColor = fontColor
+            fontColor = fontColor,
+            screenConfig = screenConfig
         )
         
         // 课程列 - 按起始日顺序显示
@@ -149,7 +153,8 @@ fun CourseGrid(
                         SegmentCard(
                             segment = segment,
                             courseColor = courseColor,
-                            onCourseClick = onCourseClick
+                            onCourseClick = onCourseClick,
+                            screenConfig = screenConfig
                         )
                     }
                 }
@@ -163,12 +168,13 @@ private fun TimeColumn(
     timeSlots: List<SectionTime>,
     cellHeight: Dp,
     backgroundColor: Color,
-    fontColor: Color
+    fontColor: Color,
+    screenConfig: ScreenConfig
 ) {
     val bgAlpha = remember(backgroundColor) { backgroundColor.copy(alpha = 0.9f) }
     val fontAlpha = remember(fontColor) { fontColor.copy(alpha = 0.6f) }
     
-    Column(modifier = Modifier.width(40.dp).fillMaxHeight().background(bgAlpha)) {
+    Column(modifier = Modifier.width(screenConfig.timeColumnWidth).fillMaxHeight().background(bgAlpha)) {
         for (section in 1..10) {
             val timeSlot = timeSlots.getOrElse(section - 1) { SectionTime(section, "", "") }
             Column(
@@ -176,9 +182,9 @@ private fun TimeColumn(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(section.toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = fontColor)
-                Text(timeSlot.start, fontSize = 9.sp, color = fontAlpha)
-                Text(timeSlot.end, fontSize = 9.sp, color = fontAlpha)
+                Text(section.toString(), fontWeight = FontWeight.Bold, fontSize = screenConfig.sectionFontSize.sp, color = fontColor)
+                Text(timeSlot.start, fontSize = screenConfig.timeFontSize.sp, color = fontAlpha)
+                Text(timeSlot.end, fontSize = screenConfig.timeFontSize.sp, color = fontAlpha)
             }
         }
     }
@@ -188,7 +194,8 @@ private fun TimeColumn(
 private fun SegmentCard(
     segment: DisplaySegment,
     courseColor: Color,
-    onCourseClick: (List<Course>) -> Unit
+    onCourseClick: (List<Course>) -> Unit,
+    screenConfig: ScreenConfig
 ) {
     val cardColor = if (segment.isConflict) Color(0xFFFFCDD2) else courseColor
     
@@ -216,17 +223,17 @@ private fun SegmentCard(
                         "冲突",
                         color = Color.Red,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
+                        fontSize = screenConfig.courseFontSize.sp
                     )
                     // 显示冲突的课程名
                     segment.courses.forEach { course ->
                         Text(
                             course.name,
-                            fontSize = 8.sp,
+                            fontSize = screenConfig.courseLocationFontSize.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
-                            lineHeight = 9.sp
+                            lineHeight = (screenConfig.courseLocationFontSize + 1).sp
                         )
                     }
                 }
@@ -236,17 +243,17 @@ private fun SegmentCard(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         course.name,
-                        fontSize = 10.sp,
+                        fontSize = screenConfig.courseFontSize.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
-                        lineHeight = 11.sp,
+                        lineHeight = (screenConfig.courseFontSize + 1).sp,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
                     if (course.room.isNotBlank()) {
                         Text(
                             "@${course.room}",
-                            fontSize = 8.sp,
+                            fontSize = screenConfig.courseLocationFontSize.sp,
                             textAlign = TextAlign.Center,
                             maxLines = 1
                         )

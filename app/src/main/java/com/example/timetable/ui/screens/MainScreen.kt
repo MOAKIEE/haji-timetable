@@ -55,6 +55,7 @@ import com.example.timetable.ui.dialogs.InputNameDialog
 import com.example.timetable.utils.calculateCurrentWeek
 import com.example.timetable.utils.getDayName
 import com.example.timetable.utils.getWeekDates
+import com.example.timetable.utils.rememberScreenConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -365,8 +366,9 @@ private fun DrawerContent(
     onScheduleDelete: (Schedule) -> Unit,
     onCreateSchedule: () -> Unit
 ) {
+    val screenConfig = rememberScreenConfig()
     ModalDrawerSheet(
-        modifier = Modifier.fillMaxWidth(0.67f),
+        modifier = Modifier.fillMaxWidth(screenConfig.drawerWidthFraction),
         drawerContainerColor = Color(appSettings.backgroundColor)
     ) {
         Spacer(Modifier.height(16.dp))
@@ -673,7 +675,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "v0.5beta",
+                    "v0.5beta fix",
                     fontSize = 14.sp,
                     color = Color.Gray.copy(alpha = 0.7f)
                 )
@@ -698,16 +700,17 @@ private fun EasterEggDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { /* 禁止点击外部关闭 */ },
         properties = DialogProperties(
-            usePlatformDefaultWidth = false
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
         )
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
-                .clickable { onDismiss() },
+                .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
             val imageLoader = ImageLoader.Builder(context)
@@ -727,6 +730,21 @@ private fun EasterEggDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 contentScale = ContentScale.Fit
             )
+            
+            // 右上角关闭按钮
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "关闭",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
     }
 }

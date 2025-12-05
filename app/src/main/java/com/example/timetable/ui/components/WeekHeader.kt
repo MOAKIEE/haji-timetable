@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.timetable.utils.rememberScreenConfig
 
 @Composable
 fun WeekHeader(
@@ -19,8 +20,10 @@ fun WeekHeader(
     backgroundColor: Color,
     fontColor: Color
 ) {
+    val screenConfig = rememberScreenConfig()
+    
     Row(modifier = Modifier.fillMaxWidth().background(backgroundColor).padding(vertical = 8.dp)) {
-        Spacer(modifier = Modifier.width(40.dp))
+        Spacer(modifier = Modifier.width(screenConfig.timeColumnWidth))
         
         // 根据起始日调整星期顺序
         val allDays = if (weekStartDay == 0) {
@@ -37,8 +40,8 @@ fun WeekHeader(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(day, color = fontColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(dateStr, color = fontColor.copy(alpha = 0.7f), fontSize = 10.sp)
+                Text(day, color = fontColor, fontSize = (screenConfig.sectionFontSize).sp, fontWeight = FontWeight.Bold)
+                Text(dateStr, color = fontColor.copy(alpha = 0.7f), fontSize = (screenConfig.timeFontSize + 1).sp)
             }
         }
     }
