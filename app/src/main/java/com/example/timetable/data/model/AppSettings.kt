@@ -5,6 +5,7 @@ import com.example.timetable.utils.getTodayDateString
 
 data class AppSettings(
     var showWeekends: Boolean = true,
+    var weekStartDay: Int = 1, // 1=周一, 0=周日
     var semesterStartDate: String = getTodayDateString(),
     var cellHeightDp: Int = 65,
     var backgroundColor: Int = 0xFFFFFFFF.toInt(),

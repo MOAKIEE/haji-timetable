@@ -24,7 +24,7 @@ fun calculateCurrentWeek(startDateStr: String): Int {
     }
 }
 
-fun getWeekDates(startDateStr: String, weekIndex: Int): List<String> {
+fun getWeekDates(startDateStr: String, weekIndex: Int, weekStartDay: Int = 1): List<String> {
     val list = mutableListOf<String>()
     try {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -34,9 +34,24 @@ fun getWeekDates(startDateStr: String, weekIndex: Int): List<String> {
         if (start != null) {
             calendar.time = start
             calendar.add(Calendar.DAY_OF_YEAR, (weekIndex - 1) * 7)
-            for (i in 0..6) {
-                list.add(displayFormat.format(calendar.time))
-                calendar.add(Calendar.DAY_OF_YEAR, 1)
+            
+            // 根据起始日调整日期顺序
+            if (weekStartDay == 0) {
+                // 周日开始：先添加周日（第7天），再添加周一到周六
+                val dates = mutableListOf<String>()
+                for (i in 0..6) {
+                    dates.add(displayFormat.format(calendar.time))
+                    calendar.add(Calendar.DAY_OF_YEAR, 1)
+                }
+                // 重新排列: 周日在前
+                list.add(dates[6]) // 周日
+                list.addAll(dates.subList(0, 6)) // 周一到周六
+            } else {
+                // 周一开始：正常顺序
+                for (i in 0..6) {
+                    list.add(displayFormat.format(calendar.time))
+                    calendar.add(Calendar.DAY_OF_YEAR, 1)
+                }
             }
         }
     } catch (e: Exception) {

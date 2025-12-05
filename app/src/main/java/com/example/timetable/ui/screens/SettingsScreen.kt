@@ -88,7 +88,6 @@ fun SettingsScreen(
                         "general" -> "常规设置"
                         "color" -> "颜色设置"
                         "time" -> "作息时间设置"
-                        "about" -> "关于"
                         else -> "设置"
                     })
                 },
@@ -127,7 +126,6 @@ fun SettingsScreen(
                 "general" -> GeneralSettingsPage(innerPadding, settings, onSettingsChange) { showDatePicker() }
                 "color" -> ColorSettingsPage(innerPadding, settings, onSettingsChange)
                 "time" -> TimeSettingsPage(innerPadding, timeSlots)
-                "about" -> AboutPage(innerPadding)
             }
         }
     }
@@ -146,8 +144,6 @@ private fun SettingsMainPage(innerPadding: PaddingValues, onNavigate: (String) -
         SettingsMenuItem("颜色设置") { onNavigate("color") }
         HorizontalDivider(color = Color.Black.copy(alpha = 0.2f))
         SettingsMenuItem("作息时间设置") { onNavigate("time") }
-        HorizontalDivider(color = Color.Black.copy(alpha = 0.2f))
-        SettingsMenuItem("关于") { onNavigate("about") }
     }
 }
 
@@ -225,6 +221,37 @@ private fun GeneralSettingsPage(
         ) {
             Text("显示周末", modifier = Modifier.weight(1f), color = Color.Black)
             Switch(checked = settings.showWeekends, onCheckedChange = { onSettingsChange(settings.copy(showWeekends = it)) })
+        }
+
+        HorizontalDivider(color = Color.Black.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        var expandedStartDay by remember { mutableStateOf(false) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        ) {
+            Text("每周起始日", modifier = Modifier.weight(1f), color = Color.Black)
+            Box {
+                OutlinedButton(onClick = { expandedStartDay = true }) {
+                    Text(if (settings.weekStartDay == 0) "周日" else "周一")
+                }
+                DropdownMenu(expanded = expandedStartDay, onDismissRequest = { expandedStartDay = false }) {
+                    DropdownMenuItem(
+                        text = { Text("周一") },
+                        onClick = {
+                            onSettingsChange(settings.copy(weekStartDay = 1))
+                            expandedStartDay = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("周日") },
+                        onClick = {
+                            onSettingsChange(settings.copy(weekStartDay = 0))
+                            expandedStartDay = false
+                        }
+                    )
+                }
+            }
         }
 
         HorizontalDivider(color = Color.Black.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
@@ -330,42 +357,5 @@ private fun TimeSettingsPage(innerPadding: PaddingValues, timeSlots: MutableList
                 HorizontalDivider(color = Color.Black.copy(alpha = 0.1f))
             }
         }
-    }
-}
-
-@Composable
-private fun AboutPage(innerPadding: PaddingValues) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(innerPadding)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Image(
-            painter = painterResource(id = R.mipmap.ic_launcher_foreground),
-            contentDescription = "应用图标",
-            modifier = Modifier.size(100.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "哈基课程表",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "by MOAKIEE",
-            fontSize = 16.sp,
-            color = Color.Black.copy(alpha = 0.7f)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "v0.4beta",
-            fontSize = 14.sp,
-            color = Color.Black.copy(alpha = 0.5f)
-        )
     }
 }

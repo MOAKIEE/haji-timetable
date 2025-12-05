@@ -19,6 +19,7 @@ object DataManager {
         val root = JSONObject()
         root.put("currentId", currentId)
         root.put("showWeekends", settings.showWeekends)
+        root.put("weekStartDay", settings.weekStartDay)
         root.put("semesterStartDate", settings.semesterStartDate)
         root.put("cellHeightDp", settings.cellHeightDp)
         root.put("backgroundColor", settings.backgroundColor)
@@ -74,6 +75,7 @@ object DataManager {
 
             val settings = AppSettings(
                 showWeekends = root.optBoolean("showWeekends", true),
+                weekStartDay = root.optInt("weekStartDay", 1),
                 semesterStartDate = root.optString("semesterStartDate", getTodayDateString()),
                 cellHeightDp = root.optInt("cellHeightDp", 65),
                 backgroundColor = root.optInt("backgroundColor", 0xFF6200EE.toInt()),

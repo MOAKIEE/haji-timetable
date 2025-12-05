@@ -1,12 +1,20 @@
 package com.example.timetable.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -19,11 +27,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
+import com.example.timetable.R
 import com.example.timetable.data.model.AppSettings
 import com.example.timetable.data.model.Course
 import com.example.timetable.data.model.Schedule
@@ -31,6 +49,7 @@ import com.example.timetable.data.model.SectionTime
 import com.example.timetable.data.repository.DataManager
 import com.example.timetable.ui.components.CourseGrid
 import com.example.timetable.ui.components.WeekHeader
+import com.example.timetable.ui.dialogs.CalendarSyncDialog
 import com.example.timetable.ui.dialogs.CourseEditorDialog
 import com.example.timetable.ui.dialogs.InputNameDialog
 import com.example.timetable.utils.calculateCurrentWeek
@@ -126,6 +145,8 @@ fun MainScreen() {
     var showCreateScheduleDialog by remember { mutableStateOf(false) }
     var showRenameScheduleDialog by remember { mutableStateOf(false) }
     var showDeleteScheduleDialog by remember { mutableStateOf(false) }
+    var showCalendarSyncDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     var editingCourse by remember { mutableStateOf<Course?>(null) }
     var viewingCourse by remember { mutableStateOf<Course?>(null) }
@@ -186,7 +207,9 @@ fun MainScreen() {
                             backgroundColor = Color(appSettings.backgroundColor),
                             fontColor = Color(appSettings.fontColor),
                             onMenuClick = { scope.launch { drawerState.open() } },
-                            onSettingsClick = { showSettingsDialog = true }
+                            onSyncCalendarClick = { showCalendarSyncDialog = true },
+                            onSettingsClick = { showSettingsDialog = true },
+                            onAboutClick = { showAboutDialog = true }
                         )
                     },
                     floatingActionButton = {
@@ -241,11 +264,9 @@ fun MainScreen() {
             totalWeeks = appSettings.totalWeeks,
             onDismiss = { showCourseDialog = false },
             onConfirm = { name, room, teacher, day, startSec, endSec, startW, endW ->
-                val defaultStart = if(editingCourse == null) (pagerState.currentPage + 1) else startW
-
                 if (editingCourse == null) {
                     val randomColor = Color((200..255).random(), (200..255).random(), (180..255).random())
-                    currentSchedule.courses.add(Course(name = name, room = room, teacher = teacher, day = day, startSection = startSec, endSection = endSec, startWeek = defaultStart, endWeek = endW, color = randomColor))
+                    currentSchedule.courses.add(Course(name = name, room = room, teacher = teacher, day = day, startSection = startSec, endSection = endSec, startWeek = startW, endWeek = endW, color = randomColor))
                 } else {
                     val index = currentSchedule.courses.indexOf(editingCourse)
                     if (index != -1) {
@@ -317,6 +338,20 @@ fun MainScreen() {
                 }) { Text("取消") }
             }
         )
+    }
+
+    if (showCalendarSyncDialog) {
+        CalendarSyncDialog(
+            courses = currentSchedule.courses.toList(),
+            timeSlots = timeSlots.toList(),
+            semesterStartDate = appSettings.semesterStartDate,
+            totalWeeks = appSettings.totalWeeks,
+            onDismiss = { showCalendarSyncDialog = false }
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutDialog(onDismiss = { showAboutDialog = false })
     }
 }
 
@@ -392,8 +427,12 @@ private fun TimetableTopBar(
     backgroundColor: Color,
     fontColor: Color,
     onMenuClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSyncCalendarClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onAboutClick: () -> Unit
 ) {
+    var showDropdownMenu by remember { mutableStateOf(false) }
+    
     Column(modifier = Modifier.background(backgroundColor)) {
         Row(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().height(50.dp).padding(horizontal = 8.dp),
@@ -401,7 +440,40 @@ private fun TimetableTopBar(
         ) {
             IconButton(onClick = onMenuClick) { Icon(Icons.Default.Menu, "菜单", tint = fontColor) }
             Text(scheduleName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = fontColor, modifier = Modifier.weight(1f).padding(start = 8.dp))
-            IconButton(onClick = onSettingsClick) { Icon(Icons.Default.Settings, "设置", tint = fontColor) }
+            Box {
+                IconButton(onClick = { showDropdownMenu = true }) {
+                    Icon(Icons.Default.MoreVert, "更多选项", tint = fontColor)
+                }
+                DropdownMenu(
+                    expanded = showDropdownMenu,
+                    onDismissRequest = { showDropdownMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("同步至日历") },
+                        onClick = {
+                            showDropdownMenu = false
+                            onSyncCalendarClick()
+                        },
+                        leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("设置") },
+                        onClick = {
+                            showDropdownMenu = false
+                            onSettingsClick()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("关于") },
+                        onClick = {
+                            showDropdownMenu = false
+                            onAboutClick()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
+                    )
+                }
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth().height(30.dp).background(backgroundColor.copy(alpha = 0.8f)),
@@ -435,8 +507,8 @@ private fun TimetablePager(
     ) { page ->
         val weekIndex = page + 1
         // 缓存日期计算
-        val weekDates = remember(appSettings.semesterStartDate, weekIndex) {
-            getWeekDates(appSettings.semesterStartDate, weekIndex)
+        val weekDates = remember(appSettings.semesterStartDate, weekIndex, appSettings.weekStartDay) {
+            getWeekDates(appSettings.semesterStartDate, weekIndex, appSettings.weekStartDay)
         }
         // 过滤当周课程 - 使用 toList() 确保每次都是新列表
         val weekCourses = currentSchedule.courses.filter { weekIndex in it.startWeek..it.endWeek }
@@ -444,6 +516,7 @@ private fun TimetablePager(
         Column(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
             WeekHeader(
                 showWeekends = appSettings.showWeekends,
+                weekStartDay = appSettings.weekStartDay,
                 dates = weekDates,
                 backgroundColor = backgroundColor,
                 fontColor = fontColor
@@ -461,6 +534,7 @@ private fun TimetablePager(
                     timeSlots = timeSlots,
                     currentWeek = weekIndex,
                     showWeekends = appSettings.showWeekends,
+                    weekStartDay = appSettings.weekStartDay,
                     cellHeightDp = appSettings.cellHeightDp,
                     backgroundColor = backgroundColor,
                     fontColor = fontColor,
@@ -539,4 +613,120 @@ private fun ConflictDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
+}
+
+@Composable
+private fun AboutDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var clickCount by remember { mutableIntStateOf(0) }
+    var showEasterEgg by remember { mutableStateOf(false) }
+    
+    // 丝滑缩放动画
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = tween(durationMillis = 150),
+        label = "scale"
+    )
+    
+    if (showEasterEgg) {
+        EasterEggDialog(onDismiss = { showEasterEgg = false })
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = null,
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    painter = painterResource(id = R.mipmap.ic_launcher_foreground),
+                    contentDescription = "应用图标",
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null
+                        ) {
+                            clickCount++
+                            if (clickCount >= 10) {
+                                clickCount = 0
+                                showEasterEgg = true
+                            }
+                        }
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "哈基课程表",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "by MOAKIEE",
+                    fontSize = 16.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "v0.5beta",
+                    fontSize = 14.sp,
+                    color = Color.Gray.copy(alpha = 0.7f)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "代码仓库",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/MOAKIEE/haji-timetable"))
+                        context.startActivity(intent)
+                    }
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
+@Composable
+private fun EasterEggDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            val imageLoader = ImageLoader.Builder(context)
+                .components {
+                    if (Build.VERSION.SDK_INT >= 28) {
+                        add(ImageDecoderDecoder.Factory())
+                    } else {
+                        add(GifDecoder.Factory())
+                    }
+                }
+                .build()
+            
+            AsyncImage(
+                model = R.raw.easter_egg,
+                contentDescription = "Easter Egg",
+                imageLoader = imageLoader,
+                modifier = Modifier.fillMaxWidth(),
+                contentScale = ContentScale.Fit
+            )
+        }
+    }
 }

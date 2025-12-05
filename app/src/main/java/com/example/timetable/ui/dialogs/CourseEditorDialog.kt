@@ -16,6 +16,7 @@ import com.example.timetable.data.model.Course
 fun CourseEditorDialog(
     courseToEdit: Course?,
     totalWeeks: Int,
+    defaultStartWeek: Int = 1,
     onDismiss: () -> Unit,
     onConfirm: (String, String, String, Int, Int, Int, Int, Int) -> Unit
 ) {
@@ -25,7 +26,7 @@ fun CourseEditorDialog(
     var selectedDay by remember { mutableStateOf(courseToEdit?.day ?: 1) }
     var selectedStartSection by remember { mutableStateOf(courseToEdit?.startSection ?: 1) }
     var selectedEndSection by remember { mutableStateOf(courseToEdit?.endSection ?: 1) }
-    var selectedStartWeek by remember { mutableStateOf(courseToEdit?.startWeek ?: 1) }
+    var selectedStartWeek by remember { mutableStateOf(courseToEdit?.startWeek ?: defaultStartWeek) }
     var selectedEndWeek by remember { mutableStateOf(courseToEdit?.endWeek ?: totalWeeks) }
 
     var expandedDay by remember { mutableStateOf(false) }

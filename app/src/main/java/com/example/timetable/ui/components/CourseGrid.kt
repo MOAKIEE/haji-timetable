@@ -104,15 +104,26 @@ fun CourseGrid(
     timeSlots: List<SectionTime>,
     currentWeek: Int,
     showWeekends: Boolean,
+    weekStartDay: Int,
     cellHeightDp: Int,
     backgroundColor: Color,
     fontColor: Color,
     courseColor: Color,
     onCourseClick: (List<Course>) -> Unit
 ) {
-    val maxDay = if (showWeekends) 7 else 5
+    val maxDay = if (showWeekends) 7 else (if (weekStartDay == 0) 6 else 5)
     val cellHeight = cellHeightDp.dp
     val totalHeight = cellHeight * 10
+    
+    // 根据起始日生成显示的日期顺序
+    // 课程的 day: 1=周一, 2=周二, ..., 7=周日
+    val dayOrder = if (weekStartDay == 0) {
+        // 周日开始: 7, 1, 2, 3, 4, 5, 6
+        if (showWeekends) listOf(7, 1, 2, 3, 4, 5, 6) else listOf(7, 1, 2, 3, 4, 5)
+    } else {
+        // 周一开始: 1, 2, 3, 4, 5, 6, 7
+        if (showWeekends) listOf(1, 2, 3, 4, 5, 6, 7) else listOf(1, 2, 3, 4, 5)
+    }
     
     // 直接计算每天的显示段，不使用 remember 缓存以确保实时更新
     val segmentsByDay = (1..7).associateWith { day ->
@@ -129,8 +140,8 @@ fun CourseGrid(
             fontColor = fontColor
         )
         
-        // 课程列
-        for (day in 1..maxDay) {
+        // 课程列 - 按起始日顺序显示
+        dayOrder.forEach { day ->
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 val segments = segmentsByDay[day] ?: emptyList()
                 segments.forEach { segment ->
