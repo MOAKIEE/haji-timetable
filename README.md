@@ -68,6 +68,7 @@ git clone https://github.com/MOAKIEE/haji-timetable.git
 ### v0.5beta fix (2025-12-05)
 - 🐛 修复彩蛋点击即关闭的问题
 - 🎨 优化图标点击动画效果
+- 📱 适配平板显示
 
 ### v0.5beta (2025-12-05)
 - ✨ 新增日历同步功能，支持将课程导出到系统日历
