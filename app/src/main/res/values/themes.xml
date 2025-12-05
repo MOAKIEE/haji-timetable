@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.Timetable" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- SplashScreen 主题 -->
+    <style name="Theme.Timetable" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Timetable.Main</item>
+    </style>
+    
+    <!-- 主应用主题 -->
+    <style name="Theme.Timetable.Main" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/white</item>
+    </style>
 </resources>
