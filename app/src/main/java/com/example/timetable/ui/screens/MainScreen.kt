@@ -49,6 +49,7 @@ import com.example.timetable.data.model.SectionTime
 import com.example.timetable.data.repository.DataManager
 import com.example.timetable.ui.components.CourseGrid
 import com.example.timetable.ui.components.WeekHeader
+import com.example.timetable.ui.components.AutoUpdateDialog
 import com.example.timetable.ui.dialogs.CalendarSyncDialog
 import com.example.timetable.ui.dialogs.CourseEditorDialog
 import com.example.timetable.ui.dialogs.InputNameDialog
@@ -58,6 +59,7 @@ import com.example.timetable.utils.getWeekDates
 import com.example.timetable.utils.rememberScreenConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -137,7 +139,17 @@ fun MainScreen() {
     val currentSchedule by remember(currentScheduleId) {
         derivedStateOf { allSchedules.find { it.id == currentScheduleId } ?: allSchedules[0] }
     }
+    
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    
+    // 防止初始渲染时侧边栏闪现 - 主动关闭并延迟启用手势
+    var gesturesEnabled by remember { mutableStateOf(false) }
+    LaunchedEffect(drawerState) {
+        // 确保抽屉关闭
+        drawerState.snapTo(DrawerValue.Closed)
+        kotlinx.coroutines.delay(150)
+        gesturesEnabled = true
+    }
 
     var showCourseDialog by remember { mutableStateOf(false) }
     var showDetailDialog by remember { mutableStateOf(false) }
@@ -148,6 +160,29 @@ fun MainScreen() {
     var showDeleteScheduleDialog by remember { mutableStateOf(false) }
     var showCalendarSyncDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+
+    // 自动更新检查状态
+    var autoUpdateDialogState by remember { mutableStateOf<UpdateDialogState>(UpdateDialogState.None) }
+    
+    // 每天首次启动自动检查更新
+    LaunchedEffect(Unit) {
+        if (com.example.timetable.utils.UpdatePreferences.shouldCheckUpdate(context)) {
+            kotlinx.coroutines.delay(1000) // 延迟1秒，等待UI完全加载
+            val result = com.example.timetable.utils.UpdateChecker.checkForUpdate()
+            com.example.timetable.utils.UpdatePreferences.markUpdateChecked(context)
+            
+            when (result) {
+                is com.example.timetable.utils.UpdateResult.Available -> {
+                    // 检查是否被忽略
+                    val ignoredVersion = com.example.timetable.utils.UpdatePreferences.getIgnoredVersion(context)
+                    if (ignoredVersion != result.releaseInfo.tagName) {
+                        autoUpdateDialogState = UpdateDialogState.Available(result.releaseInfo)
+                    }
+                }
+                else -> {} // 无更新或错误时静默处理
+            }
+        }
+    }
 
     var editingCourse by remember { mutableStateOf<Course?>(null) }
     var viewingCourse by remember { mutableStateOf<Course?>(null) }
@@ -176,6 +211,7 @@ fun MainScreen() {
         } else {
             ModalNavigationDrawer(
                 drawerState = drawerState,
+                gesturesEnabled = gesturesEnabled,
                 drawerContent = {
                     DrawerContent(
                         allSchedules = allSchedules,
@@ -353,6 +389,29 @@ fun MainScreen() {
 
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+    
+    // 自动更新检查对话框
+    when (val state = autoUpdateDialogState) {
+        is UpdateDialogState.Available -> {
+            AutoUpdateDialog(
+                releaseInfo = state.releaseInfo,
+                currentVersion = "0.6beta",
+                onDownload = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.releaseInfo.htmlUrl))
+                    context.startActivity(intent)
+                    autoUpdateDialogState = UpdateDialogState.None
+                },
+                onIgnore = {
+                    com.example.timetable.utils.UpdatePreferences.setIgnoredVersion(context, state.releaseInfo.tagName)
+                    autoUpdateDialogState = UpdateDialogState.None
+                },
+                onDismiss = {
+                    autoUpdateDialogState = UpdateDialogState.None
+                }
+            )
+        }
+        else -> {}
     }
 }
 
@@ -620,8 +679,13 @@ private fun ConflictDialog(
 @Composable
 private fun AboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var clickCount by remember { mutableIntStateOf(0) }
     var showEasterEgg by remember { mutableStateOf(false) }
+    
+    // 更新检查状态
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateDialogState by remember { mutableStateOf<UpdateDialogState>(UpdateDialogState.None) }
     
     // 丝滑缩放动画
     val interactionSource = remember { MutableInteractionSource() }
@@ -634,6 +698,29 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     
     if (showEasterEgg) {
         EasterEggDialog(onDismiss = { showEasterEgg = false })
+    }
+    
+    // 更新对话框
+    when (val state = updateDialogState) {
+        is UpdateDialogState.Available -> {
+            com.example.timetable.ui.components.UpdateDialog(
+                releaseInfo = state.releaseInfo,
+                currentVersion = "0.6beta",
+                onDismiss = { updateDialogState = UpdateDialogState.None }
+            )
+        }
+        is UpdateDialogState.NoUpdate -> {
+            com.example.timetable.ui.components.NoUpdateDialog(
+                onDismiss = { updateDialogState = UpdateDialogState.None }
+            )
+        }
+        is UpdateDialogState.Error -> {
+            com.example.timetable.ui.components.UpdateErrorDialog(
+                errorMessage = state.message,
+                onDismiss = { updateDialogState = UpdateDialogState.None }
+            )
+        }
+        UpdateDialogState.None -> {}
     }
     
     AlertDialog(
@@ -675,24 +762,71 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "v0.5beta fix",
+                    "v0.6beta",
                     fontSize = 14.sp,
                     color = Color.Gray.copy(alpha = 0.7f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    "代码仓库",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
+                
+                // 检查更新按钮
+                Button(
+                    onClick = {
+                        isCheckingUpdate = true
+                        // 手动检查时清除忽略的版本
+                        com.example.timetable.utils.UpdatePreferences.clearIgnoredVersion(context)
+                        scope.launch {
+                            val result = com.example.timetable.utils.UpdateChecker.checkForUpdate()
+                            isCheckingUpdate = false
+                            updateDialogState = when (result) {
+                                is com.example.timetable.utils.UpdateResult.Available -> 
+                                    UpdateDialogState.Available(result.releaseInfo)
+                                is com.example.timetable.utils.UpdateResult.NoUpdate -> 
+                                    UpdateDialogState.NoUpdate
+                                is com.example.timetable.utils.UpdateResult.Error -> 
+                                    UpdateDialogState.Error(result.message)
+                            }
+                        }
+                    },
+                    enabled = !isCheckingUpdate,
+                    modifier = Modifier.fillMaxWidth(0.8f)
+                ) {
+                    if (isCheckingUpdate) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("检查中...")
+                    } else {
+                        Text("检查更新")
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // 代码仓库按钮
+                Button(
+                    onClick = {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/MOAKIEE/haji-timetable"))
                         context.startActivity(intent)
-                    }
-                )
+                    },
+                    modifier = Modifier.fillMaxWidth(0.8f)
+                ) {
+                    Text("代码仓库")
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
+}
+
+// 更新对话框状态
+private sealed class UpdateDialogState {
+    object None : UpdateDialogState()
+    object NoUpdate : UpdateDialogState()
+    data class Available(val releaseInfo: com.example.timetable.utils.ReleaseInfo) : UpdateDialogState()
+    data class Error(val message: String) : UpdateDialogState()
 }
 
 @Composable
