@@ -37,82 +37,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import com.example.timetable.R
-import com.example.timetable.data.model.AppSettings
 import com.example.timetable.data.model.Course
 import com.example.timetable.data.model.Schedule
-import com.example.timetable.data.model.SectionTime
-import com.example.timetable.data.repository.DataManager
 import com.example.timetable.ui.components.CourseGrid
 import com.example.timetable.ui.components.WeekHeader
 import com.example.timetable.ui.components.AutoUpdateDialog
 import com.example.timetable.ui.dialogs.CalendarSyncDialog
 import com.example.timetable.ui.dialogs.CourseEditorDialog
 import com.example.timetable.ui.dialogs.InputNameDialog
-import com.example.timetable.utils.calculateCurrentWeek
 import com.example.timetable.utils.getDayName
 import com.example.timetable.utils.getWeekDates
 import com.example.timetable.utils.rememberScreenConfig
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    viewModel: MainViewModel = viewModel()
+) {
     val context = LocalContext.current
-
-    // 添加加载状态
-    var isLoading by remember { mutableStateOf(true) }
-    var initialPage by remember { mutableIntStateOf(0) }
-
-    val allSchedules = remember { mutableStateListOf<Schedule>() }
-    val timeSlots = remember { mutableStateListOf<SectionTime>() }
-    var currentScheduleId by remember { mutableStateOf("") }
-    var appSettings by remember { mutableStateOf(AppSettings()) }
-
-    // 在 IO 线程加载数据
+    
+    // 加载数据
     LaunchedEffect(Unit) {
-        val data = withContext(Dispatchers.IO) {
-            DataManager.load(context)
-        }
-        if (data != null) {
-            val (savedSchedules, savedTimes, settingsTuple) = data
-            if (savedSchedules.isNotEmpty()) {
-                allSchedules.addAll(savedSchedules)
-                if (savedSchedules.any { it.id == settingsTuple.first }) {
-                    currentScheduleId = settingsTuple.first
-                } else {
-                    currentScheduleId = savedSchedules[0].id
-                }
-            }
-            if (savedTimes.isNotEmpty()) {
-                timeSlots.addAll(savedTimes)
-            }
-            appSettings = settingsTuple.second
-
-            val currentWeek = calculateCurrentWeek(appSettings.semesterStartDate)
-            initialPage = (currentWeek - 1).coerceIn(0, appSettings.totalWeeks - 1)
-        }
-        // 如果没有数据，初始化默认值
-        if (allSchedules.isEmpty()) {
-            val defaultSchedule = Schedule(name = "默认课表")
-            allSchedules.add(defaultSchedule)
-            currentScheduleId = defaultSchedule.id
-        }
-        if (timeSlots.isEmpty()) {
-            for (i in 1..10) timeSlots.add(SectionTime(i, "${7 + i}:00", "${7 + i}:45"))
-        }
-        isLoading = false
+        viewModel.loadData(context)
+        viewModel.checkForUpdate(context, isManual = false)
     }
 
     // 显示加载界面
-    if (isLoading) {
+    if (viewModel.isLoading) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -123,22 +81,12 @@ fun MainScreen() {
     }
 
     val pagerState = rememberPagerState(
-        initialPage = initialPage,
-        pageCount = { appSettings.totalWeeks }
+        initialPage = viewModel.initialPage,
+        pageCount = { viewModel.appSettings.totalWeeks }
     )
 
     val scope = rememberCoroutineScope()
-
-    fun saveData() {
-        scope.launch(Dispatchers.IO) {
-            DataManager.save(context, allSchedules.toList(), timeSlots.toList(), currentScheduleId, appSettings)
-        }
-    }
-
-    // 使用 derivedStateOf 优化性能
-    val currentSchedule by remember(currentScheduleId) {
-        derivedStateOf { allSchedules.find { it.id == currentScheduleId } ?: allSchedules[0] }
-    }
+    val currentSchedule = viewModel.currentSchedule ?: return
     
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     
@@ -151,47 +99,8 @@ fun MainScreen() {
         gesturesEnabled = true
     }
 
-    var showCourseDialog by remember { mutableStateOf(false) }
-    var showDetailDialog by remember { mutableStateOf(false) }
-    var showConflictDialog by remember { mutableStateOf(false) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
-    var showCreateScheduleDialog by remember { mutableStateOf(false) }
-    var showRenameScheduleDialog by remember { mutableStateOf(false) }
-    var showDeleteScheduleDialog by remember { mutableStateOf(false) }
-    var showCalendarSyncDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-
-    // 自动更新检查状态
-    var autoUpdateDialogState by remember { mutableStateOf<UpdateDialogState>(UpdateDialogState.None) }
-    
-    // 每天首次启动自动检查更新
-    LaunchedEffect(Unit) {
-        if (com.example.timetable.utils.UpdatePreferences.shouldCheckUpdate(context)) {
-            kotlinx.coroutines.delay(1000) // 延迟1秒，等待UI完全加载
-            val result = com.example.timetable.utils.UpdateChecker.checkForUpdate()
-            com.example.timetable.utils.UpdatePreferences.markUpdateChecked(context)
-            
-            when (result) {
-                is com.example.timetable.utils.UpdateResult.Available -> {
-                    // 检查是否被忽略
-                    val ignoredVersion = com.example.timetable.utils.UpdatePreferences.getIgnoredVersion(context)
-                    if (ignoredVersion != result.releaseInfo.tagName) {
-                        autoUpdateDialogState = UpdateDialogState.Available(result.releaseInfo)
-                    }
-                }
-                else -> {} // 无更新或错误时静默处理
-            }
-        }
-    }
-
-    var editingCourse by remember { mutableStateOf<Course?>(null) }
-    var viewingCourse by remember { mutableStateOf<Course?>(null) }
-    var conflictCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
-    var scheduleToRename by remember { mutableStateOf<Schedule?>(null) }
-    var scheduleToDelete by remember { mutableStateOf<Schedule?>(null) }
-
     AnimatedContent(
-        targetState = showSettingsDialog,
+        targetState = viewModel.showSettingsDialog,
         transitionSpec = {
             if (targetState) {
                 slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
@@ -203,10 +112,15 @@ fun MainScreen() {
     ) { isSettings ->
         if (isSettings) {
             SettingsScreen(
-                timeSlots = timeSlots,
-                settings = appSettings,
-                onSettingsChange = { newSettings -> appSettings = newSettings },
-                onBack = { saveData(); showSettingsDialog = false }
+                timeSlots = viewModel.timeSlots,
+                settings = viewModel.appSettings,
+                onSettingsChange = { newSettings -> 
+                    viewModel.updateSettings(newSettings)
+                },
+                onBack = { 
+                    viewModel.saveData(context)
+                    viewModel.closeSettingsDialog()
+                }
             )
         } else {
             ModalNavigationDrawer(
@@ -214,45 +128,44 @@ fun MainScreen() {
                 gesturesEnabled = gesturesEnabled,
                 drawerContent = {
                     DrawerContent(
-                        allSchedules = allSchedules,
-                        currentScheduleId = currentScheduleId,
-                        appSettings = appSettings,
+                        allSchedules = viewModel.allSchedules,
+                        currentScheduleId = viewModel.currentScheduleId,
+                        appSettings = viewModel.appSettings,
                         onScheduleSelect = { schedule ->
-                            currentScheduleId = schedule.id
-                            saveData()
+                            viewModel.selectSchedule(schedule.id)
+                            viewModel.saveData(context)
                             scope.launch { drawerState.close() }
                         },
                         onScheduleRename = { schedule ->
-                            scheduleToRename = schedule
-                            showRenameScheduleDialog = true
+                            viewModel.openRenameScheduleDialog(schedule)
                         },
                         onScheduleDelete = { schedule ->
-                            scheduleToDelete = schedule
-                            showDeleteScheduleDialog = true
+                            viewModel.openDeleteScheduleDialog(schedule)
                         },
-                        onCreateSchedule = { showCreateScheduleDialog = true }
+                        onCreateSchedule = { 
+                            viewModel.openCreateScheduleDialog()
+                        }
                     )
                 }
             ) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
-                    containerColor = Color(appSettings.backgroundColor),
+                    containerColor = Color(viewModel.appSettings.backgroundColor),
                     topBar = {
                         TimetableTopBar(
                             scheduleName = currentSchedule.name,
                             currentWeek = pagerState.currentPage + 1,
-                            backgroundColor = Color(appSettings.backgroundColor),
-                            fontColor = Color(appSettings.fontColor),
+                            backgroundColor = Color(viewModel.appSettings.backgroundColor),
+                            fontColor = Color(viewModel.appSettings.fontColor),
                             onMenuClick = { scope.launch { drawerState.open() } },
-                            onSyncCalendarClick = { showCalendarSyncDialog = true },
-                            onSettingsClick = { showSettingsDialog = true },
-                            onAboutClick = { showAboutDialog = true }
+                            onSyncCalendarClick = { viewModel.openCalendarSyncDialog() },
+                            onSettingsClick = { viewModel.openSettingsDialog() },
+                            onAboutClick = { viewModel.openAboutDialog() }
                         )
                     },
                     floatingActionButton = {
                         FloatingActionButton(onClick = {
-                            editingCourse = null
-                            showCourseDialog = true
+                            viewModel.openCourseDialog(null)
                         }) { Icon(Icons.Default.Add, "添加") }
                     }
                 ) { innerPadding ->
@@ -260,15 +173,13 @@ fun MainScreen() {
                         pagerState = pagerState,
                         innerPadding = innerPadding,
                         currentSchedule = currentSchedule,
-                        timeSlots = timeSlots,
-                        appSettings = appSettings,
+                        timeSlots = viewModel.timeSlots,
+                        appSettings = viewModel.appSettings,
                         onCourseClick = { clickedCourses ->
                             if (clickedCourses.size == 1) {
-                                viewingCourse = clickedCourses.first()
-                                showDetailDialog = true
+                                viewModel.openDetailDialog(clickedCourses.first())
                             } else if (clickedCourses.size > 1) {
-                                conflictCourses = clickedCourses
-                                showConflictDialog = true
+                                viewModel.openConflictDialog(clickedCourses)
                             }
                         }
                     )
@@ -278,140 +189,170 @@ fun MainScreen() {
     }
 
     // Dialogs
-    if (showDetailDialog && viewingCourse != null) {
+    if (viewModel.showDetailDialog && viewModel.viewingCourse != null) {
         CourseDetailDialog(
-            course = viewingCourse!!,
-            onDismiss = { showDetailDialog = false },
+            course = viewModel.viewingCourse!!,
+            onDismiss = { viewModel.closeDetailDialog() },
             onEdit = {
-                editingCourse = viewingCourse
-                showDetailDialog = false
-                showCourseDialog = true
+                viewModel.openCourseDialog(viewModel.viewingCourse)
+                viewModel.closeDetailDialog()
             },
             onDelete = {
-                currentSchedule.courses.remove(viewingCourse)
-                saveData()
-                showDetailDialog = false
+                viewModel.deleteCourse(viewModel.viewingCourse!!)
+                viewModel.saveData(context)
+                viewModel.closeDetailDialog()
             }
         )
     }
 
-    if (showCourseDialog) {
+    if (viewModel.showCourseDialog) {
         CourseEditorDialog(
-            courseToEdit = editingCourse,
-            totalWeeks = appSettings.totalWeeks,
-            onDismiss = { showCourseDialog = false },
+            courseToEdit = viewModel.editingCourse,
+            totalWeeks = viewModel.appSettings.totalWeeks,
+            onDismiss = { viewModel.closeCourseDialog() },
             onConfirm = { name, room, teacher, day, startSec, endSec, startW, endW ->
-                if (editingCourse == null) {
+                val course = if (viewModel.editingCourse == null) {
                     val randomColor = Color((200..255).random(), (200..255).random(), (180..255).random())
-                    currentSchedule.courses.add(Course(name = name, room = room, teacher = teacher, day = day, startSection = startSec, endSection = endSec, startWeek = startW, endWeek = endW, color = randomColor))
+                    Course(
+                        name = name, 
+                        room = room, 
+                        teacher = teacher, 
+                        day = day, 
+                        startSection = startSec, 
+                        endSection = endSec, 
+                        startWeek = startW, 
+                        endWeek = endW, 
+                        color = randomColor
+                    )
                 } else {
-                    val index = currentSchedule.courses.indexOf(editingCourse)
-                    if (index != -1) {
-                        currentSchedule.courses[index] = editingCourse!!.copy(name = name, room = room, teacher = teacher, day = day, startSection = startSec, endSection = endSec, startWeek = startW, endWeek = endW)
-                    }
+                    viewModel.editingCourse!!.copy(
+                        name = name, 
+                        room = room, 
+                        teacher = teacher, 
+                        day = day, 
+                        startSection = startSec, 
+                        endSection = endSec, 
+                        startWeek = startW, 
+                        endWeek = endW
+                    )
                 }
-                saveData()
-                showCourseDialog = false
+                viewModel.addOrUpdateCourse(course, viewModel.editingCourse != null)
+                viewModel.saveData(context)
+                viewModel.closeCourseDialog()
             }
         )
     }
 
-    if (showConflictDialog) {
+    if (viewModel.showConflictDialog) {
         ConflictDialog(
-            conflictCourses = conflictCourses,
-            onDismiss = { showConflictDialog = false },
+            conflictCourses = viewModel.conflictCourses,
+            onDismiss = { viewModel.closeConflictDialog() },
             onCourseSelect = { course ->
-                viewingCourse = course
-                showConflictDialog = false
-                showDetailDialog = true
+                viewModel.openDetailDialog(course)
+                viewModel.closeConflictDialog()
             }
         )
     }
 
-    if (showCreateScheduleDialog) {
-        InputNameDialog(title = "新建课表", onConfirm = { name ->
-            val newSch = Schedule(name = name)
-            allSchedules.add(newSch)
-            currentScheduleId = newSch.id
-            saveData()
-            showCreateScheduleDialog = false
-            scope.launch { drawerState.close() }
-        }, onDismiss = { showCreateScheduleDialog = false })
+    if (viewModel.showCreateScheduleDialog) {
+        InputNameDialog(
+            title = "新建课表", 
+            onConfirm = { name ->
+                viewModel.createSchedule(name)
+                viewModel.saveData(context)
+                viewModel.closeCreateScheduleDialog()
+                scope.launch { drawerState.close() }
+            }, 
+            onDismiss = { viewModel.closeCreateScheduleDialog() }
+        )
     }
 
-    if (showRenameScheduleDialog && scheduleToRename != null) {
-        InputNameDialog(title = "重命名课表", initialValue = scheduleToRename!!.name, onConfirm = { name ->
-            scheduleToRename!!.name = name
-            saveData()
-            showRenameScheduleDialog = false
-        }, onDismiss = { showRenameScheduleDialog = false })
+    if (viewModel.showRenameScheduleDialog && viewModel.scheduleToRename != null) {
+        InputNameDialog(
+            title = "重命名课表", 
+            initialValue = viewModel.scheduleToRename!!.name, 
+            onConfirm = { name ->
+                viewModel.renameSchedule(viewModel.scheduleToRename!!, name)
+                viewModel.saveData(context)
+                viewModel.closeRenameScheduleDialog()
+            }, 
+            onDismiss = { viewModel.closeRenameScheduleDialog() }
+        )
     }
 
-    if (showDeleteScheduleDialog && scheduleToDelete != null) {
+    if (viewModel.showDeleteScheduleDialog && viewModel.scheduleToDelete != null) {
         AlertDialog(
-            onDismissRequest = { showDeleteScheduleDialog = false },
+            onDismissRequest = { viewModel.closeDeleteScheduleDialog() },
             title = { Text("删除课表") },
-            text = { Text("确定要删除课表「${scheduleToDelete!!.name}」吗？\n该操作不可恢复。") },
+            text = { Text("确定要删除课表「${viewModel.scheduleToDelete!!.name}」吗？\n该操作不可恢复。") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val schedule = scheduleToDelete!!
-                        if (schedule.id == currentScheduleId) {
-                            val newCurrent = allSchedules.firstOrNull { it.id != schedule.id }
-                            if (newCurrent != null) currentScheduleId = newCurrent.id
-                        }
-                        allSchedules.remove(schedule)
-                        saveData()
-                        showDeleteScheduleDialog = false
-                        scheduleToDelete = null
+                        viewModel.deleteSchedule(viewModel.scheduleToDelete!!)
+                        viewModel.saveData(context)
+                        viewModel.closeDeleteScheduleDialog()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
                 ) { Text("删除") }
             },
             dismissButton = {
                 TextButton(onClick = { 
-                    showDeleteScheduleDialog = false
-                    scheduleToDelete = null
+                    viewModel.closeDeleteScheduleDialog()
                 }) { Text("取消") }
             }
         )
     }
 
-    if (showCalendarSyncDialog) {
+    if (viewModel.showCalendarSyncDialog) {
         CalendarSyncDialog(
             courses = currentSchedule.courses.toList(),
-            timeSlots = timeSlots.toList(),
-            semesterStartDate = appSettings.semesterStartDate,
-            totalWeeks = appSettings.totalWeeks,
-            onDismiss = { showCalendarSyncDialog = false }
+            timeSlots = viewModel.timeSlots.toList(),
+            semesterStartDate = viewModel.appSettings.semesterStartDate,
+            totalWeeks = viewModel.appSettings.totalWeeks,
+            onDismiss = { viewModel.closeCalendarSyncDialog() }
         )
     }
 
-    if (showAboutDialog) {
-        AboutDialog(onDismiss = { showAboutDialog = false })
+    if (viewModel.showAboutDialog) {
+        AboutDialog(
+            onDismiss = { viewModel.closeAboutDialog() },
+            onCheckUpdate = {
+                viewModel.checkForUpdate(context, isManual = true)
+            }
+        )
     }
     
     // 自动更新检查对话框
-    when (val state = autoUpdateDialogState) {
+    when (val state = viewModel.autoUpdateDialogState) {
         is UpdateDialogState.Available -> {
             AutoUpdateDialog(
                 releaseInfo = state.releaseInfo,
-                currentVersion = "0.6beta",
+                currentVersion = "0.7beta",
                 onDownload = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.releaseInfo.htmlUrl))
                     context.startActivity(intent)
-                    autoUpdateDialogState = UpdateDialogState.None
+                    viewModel.closeUpdateDialog()
                 },
                 onIgnore = {
-                    com.example.timetable.utils.UpdatePreferences.setIgnoredVersion(context, state.releaseInfo.tagName)
-                    autoUpdateDialogState = UpdateDialogState.None
+                    viewModel.ignoreUpdate(context, state.releaseInfo.tagName)
                 },
                 onDismiss = {
-                    autoUpdateDialogState = UpdateDialogState.None
+                    viewModel.closeUpdateDialog()
                 }
             )
         }
-        else -> {}
+        is UpdateDialogState.NoUpdate -> {
+            com.example.timetable.ui.components.NoUpdateDialog(
+                onDismiss = { viewModel.closeUpdateDialog() }
+            )
+        }
+        is UpdateDialogState.Error -> {
+            com.example.timetable.ui.components.UpdateErrorDialog(
+                errorMessage = state.message,
+                onDismiss = { viewModel.closeUpdateDialog() }
+            )
+        }
+        UpdateDialogState.None -> {}
     }
 }
 
@@ -419,7 +360,7 @@ fun MainScreen() {
 private fun DrawerContent(
     allSchedules: List<Schedule>,
     currentScheduleId: String,
-    appSettings: AppSettings,
+    appSettings: com.example.timetable.data.model.AppSettings,
     onScheduleSelect: (Schedule) -> Unit,
     onScheduleRename: (Schedule) -> Unit,
     onScheduleDelete: (Schedule) -> Unit,
@@ -552,8 +493,8 @@ private fun TimetablePager(
     pagerState: PagerState,
     innerPadding: PaddingValues,
     currentSchedule: Schedule,
-    timeSlots: List<SectionTime>,
-    appSettings: AppSettings,
+    timeSlots: List<com.example.timetable.data.model.SectionTime>,
+    appSettings: com.example.timetable.data.model.AppSettings,
     onCourseClick: (List<Course>) -> Unit
 ) {
     // 缓存颜色计算避免重复创建
@@ -677,15 +618,13 @@ private fun ConflictDialog(
 }
 
 @Composable
-private fun AboutDialog(onDismiss: () -> Unit) {
+private fun AboutDialog(
+    onDismiss: () -> Unit,
+    onCheckUpdate: () -> Unit
+) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var clickCount by remember { mutableIntStateOf(0) }
     var showEasterEgg by remember { mutableStateOf(false) }
-    
-    // 更新检查状态
-    var isCheckingUpdate by remember { mutableStateOf(false) }
-    var updateDialogState by remember { mutableStateOf<UpdateDialogState>(UpdateDialogState.None) }
     
     // 丝滑缩放动画
     val interactionSource = remember { MutableInteractionSource() }
@@ -698,29 +637,6 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     
     if (showEasterEgg) {
         EasterEggDialog(onDismiss = { showEasterEgg = false })
-    }
-    
-    // 更新对话框
-    when (val state = updateDialogState) {
-        is UpdateDialogState.Available -> {
-            com.example.timetable.ui.components.UpdateDialog(
-                releaseInfo = state.releaseInfo,
-                currentVersion = "0.6beta",
-                onDismiss = { updateDialogState = UpdateDialogState.None }
-            )
-        }
-        is UpdateDialogState.NoUpdate -> {
-            com.example.timetable.ui.components.NoUpdateDialog(
-                onDismiss = { updateDialogState = UpdateDialogState.None }
-            )
-        }
-        is UpdateDialogState.Error -> {
-            com.example.timetable.ui.components.UpdateErrorDialog(
-                errorMessage = state.message,
-                onDismiss = { updateDialogState = UpdateDialogState.None }
-            )
-        }
-        UpdateDialogState.None -> {}
     }
     
     AlertDialog(
@@ -762,7 +678,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "v0.6beta",
+                    "v0.7beta",
                     fontSize = 14.sp,
                     color = Color.Gray.copy(alpha = 0.7f)
                 )
@@ -770,37 +686,10 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 
                 // 检查更新按钮
                 Button(
-                    onClick = {
-                        isCheckingUpdate = true
-                        // 手动检查时清除忽略的版本
-                        com.example.timetable.utils.UpdatePreferences.clearIgnoredVersion(context)
-                        scope.launch {
-                            val result = com.example.timetable.utils.UpdateChecker.checkForUpdate()
-                            isCheckingUpdate = false
-                            updateDialogState = when (result) {
-                                is com.example.timetable.utils.UpdateResult.Available -> 
-                                    UpdateDialogState.Available(result.releaseInfo)
-                                is com.example.timetable.utils.UpdateResult.NoUpdate -> 
-                                    UpdateDialogState.NoUpdate
-                                is com.example.timetable.utils.UpdateResult.Error -> 
-                                    UpdateDialogState.Error(result.message)
-                            }
-                        }
-                    },
-                    enabled = !isCheckingUpdate,
+                    onClick = onCheckUpdate,
                     modifier = Modifier.fillMaxWidth(0.8f)
                 ) {
-                    if (isCheckingUpdate) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("检查中...")
-                    } else {
-                        Text("检查更新")
-                    }
+                    Text("检查更新")
                 }
                 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -819,14 +708,6 @@ private fun AboutDialog(onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
-}
-
-// 更新对话框状态
-private sealed class UpdateDialogState {
-    object None : UpdateDialogState()
-    object NoUpdate : UpdateDialogState()
-    data class Available(val releaseInfo: com.example.timetable.utils.ReleaseInfo) : UpdateDialogState()
-    data class Error(val message: String) : UpdateDialogState()
 }
 
 @Composable

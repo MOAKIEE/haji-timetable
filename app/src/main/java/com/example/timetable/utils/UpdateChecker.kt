@@ -36,7 +36,7 @@ sealed class UpdateResult {
 
 object UpdateChecker {
     private const val GITHUB_API_URL = "https://api.github.com/repos/MOAKIEE/haji-timetable/releases/latest"
-    private const val CURRENT_VERSION = "0.6beta"
+    private const val CURRENT_VERSION = "0.7beta"
     
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
