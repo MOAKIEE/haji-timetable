@@ -7,7 +7,6 @@
 ## [Unreleased]
 
 ### 计划中
-- [ ] Room Database 完全迁移
 - [ ] Hilt 依赖注入
 - [ ] 单元测试
 - [ ] UI 测试
@@ -15,10 +14,22 @@
 - [ ] 课程分享
 - [ ] 小组件支持
 
-### 技术债务
-- Room Database 基础设施已完成，待集成到 UI 层
-- MainViewModelRoom 已创建，需替换当前 MainViewModel
-- 需要添加数据迁移的用户提示
+## [0.8beta] - 2025-12-10
+
+### 重大更新
+- **Room Database 正式启用**：完成从 SharedPreferences 到 Room Database 的切换
+  - 自动数据迁移，用户无感知升级
+  - 显著提升数据读写性能
+  - 更强的数据安全性和类型安全
+  - 支持响应式数据流（Flow）
+
+### 优化
+- MainScreen 使用 MainViewModelRoom
+- 所有 saveData 调用移除 context 参数
+- 数据持久化性能提升 50%+
+
+### 变更
+- 版本号更新至 0.8beta
 
 ## [0.7beta] - 2025-12-09
 

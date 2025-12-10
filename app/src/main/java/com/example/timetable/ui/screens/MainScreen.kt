@@ -58,10 +58,9 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun MainScreen(
-    viewModel: MainViewModel = viewModel()
-) {
+fun MainScreen() {
     val context = LocalContext.current
+    val viewModel: MainViewModelRoom = remember { createMainViewModel(context) }
     
     // 加载数据
     LaunchedEffect(Unit) {
@@ -118,7 +117,7 @@ fun MainScreen(
                     viewModel.updateSettings(newSettings)
                 },
                 onBack = { 
-                    viewModel.saveData(context)
+                    viewModel.saveData()
                     viewModel.closeSettingsDialog()
                 }
             )
@@ -133,7 +132,7 @@ fun MainScreen(
                         appSettings = viewModel.appSettings,
                         onScheduleSelect = { schedule ->
                             viewModel.selectSchedule(schedule.id)
-                            viewModel.saveData(context)
+                            viewModel.saveData()
                             scope.launch { drawerState.close() }
                         },
                         onScheduleRename = { schedule ->
@@ -199,7 +198,7 @@ fun MainScreen(
             },
             onDelete = {
                 viewModel.deleteCourse(viewModel.viewingCourse!!)
-                viewModel.saveData(context)
+                viewModel.saveData()
                 viewModel.closeDetailDialog()
             }
         )
@@ -237,7 +236,7 @@ fun MainScreen(
                     )
                 }
                 viewModel.addOrUpdateCourse(course, viewModel.editingCourse != null)
-                viewModel.saveData(context)
+                viewModel.saveData()
                 viewModel.closeCourseDialog()
             }
         )
@@ -259,7 +258,7 @@ fun MainScreen(
             title = "新建课表", 
             onConfirm = { name ->
                 viewModel.createSchedule(name)
-                viewModel.saveData(context)
+                viewModel.saveData()
                 viewModel.closeCreateScheduleDialog()
                 scope.launch { drawerState.close() }
             }, 
@@ -273,7 +272,7 @@ fun MainScreen(
             initialValue = viewModel.scheduleToRename!!.name, 
             onConfirm = { name ->
                 viewModel.renameSchedule(viewModel.scheduleToRename!!, name)
-                viewModel.saveData(context)
+                viewModel.saveData()
                 viewModel.closeRenameScheduleDialog()
             }, 
             onDismiss = { viewModel.closeRenameScheduleDialog() }
@@ -289,7 +288,7 @@ fun MainScreen(
                 TextButton(
                     onClick = {
                         viewModel.deleteSchedule(viewModel.scheduleToDelete!!)
-                        viewModel.saveData(context)
+                        viewModel.saveData()
                         viewModel.closeDeleteScheduleDialog()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
@@ -327,7 +326,7 @@ fun MainScreen(
         is UpdateDialogState.Available -> {
             AutoUpdateDialog(
                 releaseInfo = state.releaseInfo,
-                currentVersion = "0.7beta",
+                currentVersion = "0.8beta",
                 onDownload = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.releaseInfo.htmlUrl))
                     context.startActivity(intent)
@@ -678,7 +677,7 @@ private fun AboutDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "v0.7beta",
+                    "v0.8beta",
                     fontSize = 14.sp,
                     color = Color.Gray.copy(alpha = 0.7f)
                 )

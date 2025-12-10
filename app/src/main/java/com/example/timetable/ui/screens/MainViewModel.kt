@@ -30,7 +30,7 @@ class MainViewModel : ViewModel() {
     
     companion object {
         private const val TAG = "MainViewModel"
-        const val CURRENT_VERSION = "0.7beta"
+        const val CURRENT_VERSION = "0.8beta"
         private const val AUTO_UPDATE_DELAY_MS = 1000L
         private const val DRAWER_CLOSE_DELAY_MS = 150L
         private const val DEFAULT_SCHEDULE_NAME = "默认课表"
