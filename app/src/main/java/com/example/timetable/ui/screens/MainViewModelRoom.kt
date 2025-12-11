@@ -18,6 +18,10 @@ import com.example.timetable.utils.UpdateChecker
 import com.example.timetable.utils.UpdatePreferences
 import com.example.timetable.utils.UpdateResult
 import com.example.timetable.utils.calculateCurrentWeek
+import com.example.timetable.utils.ImportExportHelper
+import com.example.timetable.utils.ImportExportResult
+import android.net.Uri
+import android.graphics.Bitmap
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -27,6 +31,10 @@ import kotlinx.coroutines.launch
  * 负责管理课表数据、应用设置和业务逻辑
  */
 class MainViewModelRoom(private val repository: TimetableRepository) : ViewModel() {
+    
+    companion object {
+        private const val CURRENT_VERSION = "0.9beta"
+    }
     
     // 数据状态
     var isLoading by mutableStateOf(true)
@@ -69,6 +77,15 @@ class MainViewModelRoom(private val repository: TimetableRepository) : ViewModel
     var showCalendarSyncDialog by mutableStateOf(false)
         private set
     
+    var showImportExportDialog by mutableStateOf(false)
+        private set
+    
+    var showImportMethodDialog by mutableStateOf(false)
+        private set
+    
+    var showExportMethodDialog by mutableStateOf(false)
+        private set
+    
     var showAboutDialog by mutableStateOf(false)
         private set
     
@@ -89,6 +106,28 @@ class MainViewModelRoom(private val repository: TimetableRepository) : ViewModel
         private set
     
     var scheduleToDelete by mutableStateOf<Schedule?>(null)
+        private set
+    
+    // 导入导出状态
+    var exportedQRCode by mutableStateOf<Bitmap?>(null)
+        private set
+    
+    var importExportMessage by mutableStateOf<String?>(null)
+        private set
+    
+    var importExportSuccess by mutableStateOf(false)
+        private set
+    
+    var importedSchedulesCount by mutableStateOf(0)
+        private set
+    
+    var isImportOperation by mutableStateOf(true)
+        private set
+    
+    var showImportConfirmDialog by mutableStateOf(false)
+        private set
+    
+    var pendingImportData by mutableStateOf<Triple<List<Schedule>, List<SectionTime>, AppSettings>?>(null)
         private set
     
     // 当前课表（包含课程）
@@ -283,6 +322,30 @@ class MainViewModelRoom(private val repository: TimetableRepository) : ViewModel
         showCalendarSyncDialog = false
     }
     
+    fun openImportExportDialog() {
+        showImportExportDialog = true
+    }
+    
+    fun closeImportExportDialog() {
+        showImportExportDialog = false
+    }
+    
+    fun openImportMethodDialog() {
+        showImportMethodDialog = true
+    }
+    
+    fun closeImportMethodDialog() {
+        showImportMethodDialog = false
+    }
+    
+    fun openExportMethodDialog() {
+        showExportMethodDialog = true
+    }
+    
+    fun closeExportMethodDialog() {
+        showExportMethodDialog = false
+    }
+    
     fun openAboutDialog() {
         showAboutDialog = true
     }
@@ -353,6 +416,242 @@ class MainViewModelRoom(private val repository: TimetableRepository) : ViewModel
     fun ignoreUpdate(context: Context, version: String) {
         UpdatePreferences.setIgnoredVersion(context, version)
         closeUpdateDialog()
+    }
+    
+    // 导出为 JSON 文件
+    fun exportToJson(context: Context) {
+        viewModelScope.launch {
+            try {
+                val current = currentSchedule ?: return@launch
+                val jsonData = ImportExportHelper.exportToJson(
+                    schedules = listOf(current),
+                    sectionTimes = timeSlots.toList(),
+                    settings = appSettings,
+                    appVersion = CURRENT_VERSION
+                )
+                
+                val result = ImportExportHelper.saveJsonToFile(context, jsonData)
+                when (result) {
+                    is ImportExportResult.Success -> {
+                        importExportMessage = result.message
+                        importExportSuccess = true
+                    }
+                    is ImportExportResult.Error -> {
+                        importExportMessage = result.message
+                        importExportSuccess = false
+                    }
+                }
+            } catch (e: Exception) {
+                importExportMessage = "导出失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
+    }
+    
+    // 导出到指定文件（用户选择保存位置）
+    fun exportToFile(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val current = currentSchedule ?: return@launch
+                val jsonData = ImportExportHelper.exportToJson(
+                    schedules = listOf(current),
+                    sectionTimes = timeSlots.toList(),
+                    settings = appSettings,
+                    appVersion = CURRENT_VERSION
+                )
+                
+                // 写入用户选择的文件
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(jsonData.toByteArray())
+                }
+                
+                isImportOperation = false
+                importExportMessage = "导出成功"
+                importExportSuccess = true
+            } catch (e: Exception) {
+                importExportMessage = "导出失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
+    }
+    
+    // 生成二维码
+    fun exportToQRCode(context: Context) {
+        viewModelScope.launch {
+            try {
+                val current = currentSchedule ?: return@launch
+                val jsonData = ImportExportHelper.exportToJson(
+                    schedules = listOf(current),
+                    sectionTimes = timeSlots.toList(),
+                    settings = appSettings,
+                    appVersion = CURRENT_VERSION
+                )
+                
+                val qrCode = ImportExportHelper.generateQRCode(jsonData, 800)
+                if (qrCode != null) {
+                    exportedQRCode = qrCode
+                } else {
+                    importExportMessage = "二维码生成失败"
+                    importExportSuccess = false
+                }
+            } catch (e: Exception) {
+                importExportMessage = "二维码生成失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
+    }
+    
+    // 从文件导入
+    fun importFromFile(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val jsonData = ImportExportHelper.readJsonFromFile(context, uri)
+                val (exportData, result) = ImportExportHelper.importFromJson(jsonData)
+                
+                when (result) {
+                    is ImportExportResult.Success -> {
+                        // 转换数据
+                        val (newSchedules, newSectionTimes, newSettings) = 
+                            ImportExportHelper.convertToAppModels(exportData)
+                        
+                        // 保存待导入数据并显示确认对话框
+                        pendingImportData = Triple(newSchedules, newSectionTimes, newSettings)
+                        importedSchedulesCount = newSchedules.size
+                        showImportConfirmDialog = true
+                    }
+                    is ImportExportResult.Error -> {
+                        importExportMessage = result.message
+                        importExportSuccess = false
+                    }
+                }
+            } catch (e: Exception) {
+                importExportMessage = "导入失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
+    }
+    
+    // 从二维码导入
+    fun importFromQRCode(context: Context, qrContent: String) {
+        viewModelScope.launch {
+            try {
+                val (exportData, result) = ImportExportHelper.importFromJson(qrContent)
+                
+                when (result) {
+                    is ImportExportResult.Success -> {
+                        // 转换数据
+                        val (newSchedules, newSectionTimes, newSettings) = 
+                            ImportExportHelper.convertToAppModels(exportData)
+                        
+                        // 保存待导入数据并显示确认对话框
+                        pendingImportData = Triple(newSchedules, newSectionTimes, newSettings)
+                        importedSchedulesCount = newSchedules.size
+                        showImportConfirmDialog = true
+                    }
+                    is ImportExportResult.Error -> {
+                        importExportMessage = result.message
+                        importExportSuccess = false
+                    }
+                }
+            } catch (e: Exception) {
+                importExportMessage = "导入失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
+    }
+    
+    fun clearImportExportMessage() {
+        importExportMessage = null
+        exportedQRCode = null
+    }
+    
+    fun showPermissionDeniedMessage() {
+        importExportMessage = "需要相机权限才能扫描二维码"
+        importExportSuccess = false
+    }
+    
+    fun closeImportConfirmDialog() {
+        showImportConfirmDialog = false
+        pendingImportData = null
+    }
+    
+    // 覆盖导入 - 覆盖当前课表
+    fun confirmImportOverwrite(context: Context) {
+        viewModelScope.launch {
+            try {
+                val data = pendingImportData ?: return@launch
+                val current = currentSchedule ?: return@launch
+                val (newSchedules, newSectionTimes, _) = data
+                val importSchedule = newSchedules.firstOrNull() ?: return@launch
+                
+                // 删除当前课表的所有课程
+                repository.deleteCoursesBySchedule(current.id)
+                
+                // 更新时间段
+                repository.deleteAllSectionTimes()
+                newSectionTimes.forEach { repository.insertSectionTime(it) }
+                
+                // 导入课程到当前课表
+                importSchedule.courses.forEach { course ->
+                    repository.insertCourse(course, current.id)
+                }
+                
+                // 重新加载数据
+                loadData(context)
+                
+                isImportOperation = true
+                importExportMessage = "已覆盖当前课表"
+                importExportSuccess = true
+                showImportConfirmDialog = false
+                pendingImportData = null
+            } catch (e: Exception) {
+                isImportOperation = true
+                importExportMessage = "导入失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
+    }
+    
+    // 新建导入 - 创建新课表
+    fun confirmImportAsNew(context: Context, newName: String) {
+        viewModelScope.launch {
+            try {
+                val data = pendingImportData ?: return@launch
+                val (newSchedules, newSectionTimes, _) = data
+                val importSchedule = newSchedules.firstOrNull() ?: return@launch
+                
+                // 检查是否需要导入时间段（如果当前没有时间段）
+                if (timeSlots.isEmpty()) {
+                    newSectionTimes.forEach { repository.insertSectionTime(it) }
+                }
+                
+                // 创建新课表
+                val finalName = newName.ifBlank { "${importSchedule.name} (导入)" }
+                val newSchedule = Schedule(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = finalName
+                )
+                repository.insertSchedule(newSchedule)
+                
+                // 导入课程到新课表
+                importSchedule.courses.forEach { course ->
+                    repository.insertCourse(course, newSchedule.id)
+                }
+                
+                // 重新加载数据
+                loadData(context)
+                
+                isImportOperation = true
+                importExportMessage = "已创建新课表: $finalName"
+                importExportSuccess = true
+                showImportConfirmDialog = false
+                pendingImportData = null
+            } catch (e: Exception) {
+                isImportOperation = true
+                importExportMessage = "导入失败: ${e.message}"
+                importExportSuccess = false
+            }
+        }
     }
 }
 

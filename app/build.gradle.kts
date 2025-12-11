@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.timetable"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.8beta"
+        versionCode = 4
+        versionName = "0.9beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -66,6 +66,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
+    // ZXing for QR code generation and scanning
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

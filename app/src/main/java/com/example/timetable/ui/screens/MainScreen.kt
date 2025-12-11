@@ -38,6 +38,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.GifDecoder
@@ -51,6 +54,7 @@ import com.example.timetable.ui.components.AutoUpdateDialog
 import com.example.timetable.ui.dialogs.CalendarSyncDialog
 import com.example.timetable.ui.dialogs.CourseEditorDialog
 import com.example.timetable.ui.dialogs.InputNameDialog
+import com.example.timetable.ui.dialogs.*
 import com.example.timetable.utils.getDayName
 import com.example.timetable.utils.getWeekDates
 import com.example.timetable.utils.rememberScreenConfig
@@ -61,6 +65,51 @@ import kotlinx.coroutines.launch
 fun MainScreen() {
     val context = LocalContext.current
     val viewModel: MainViewModelRoom = remember { createMainViewModel(context) }
+    
+    // 文件选择器（用于导入）
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            viewModel.importFromFile(context, it)
+        }
+    }
+    
+    // 文件保存器（用于导出）
+    val fileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            viewModel.exportToFile(context, it)
+        }
+    }
+    
+    // 二维码扫描器
+    val qrScanLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            result.data?.getStringExtra(QRCodeScanActivity.EXTRA_SCAN_RESULT)?.let { qrContent ->
+                viewModel.importFromQRCode(context, qrContent)
+            }
+        } else {
+            // 扫描取消或失败，重新打开导入方式选择对话框
+            viewModel.openImportMethodDialog()
+        }
+    }
+    
+    // 相机权限请求
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(context, QRCodeScanActivity::class.java)
+            qrScanLauncher.launch(intent)
+        } else {
+            // 权限被拒绝
+            viewModel.showPermissionDeniedMessage()
+        }
+    }
     
     // 加载数据
     LaunchedEffect(Unit) {
@@ -158,6 +207,7 @@ fun MainScreen() {
                             fontColor = Color(viewModel.appSettings.fontColor),
                             onMenuClick = { scope.launch { drawerState.open() } },
                             onSyncCalendarClick = { viewModel.openCalendarSyncDialog() },
+                            onImportExportClick = { viewModel.openImportExportDialog() },
                             onSettingsClick = { viewModel.openSettingsDialog() },
                             onAboutClick = { viewModel.openAboutDialog() }
                         )
@@ -312,6 +362,96 @@ fun MainScreen() {
         )
     }
 
+    // 导入导出对话框
+    if (viewModel.showImportExportDialog) {
+        ImportExportDialog(
+            onDismiss = { viewModel.closeImportExportDialog() },
+            onImport = { viewModel.openImportMethodDialog() },
+            onExport = { viewModel.openExportMethodDialog() }
+        )
+    }
+
+    // 导入方式选择对话框
+    if (viewModel.showImportMethodDialog) {
+        ImportMethodDialog(
+            onDismiss = { viewModel.closeImportMethodDialog() },
+            onImportFile = { 
+                viewModel.closeImportMethodDialog()
+                filePickerLauncher.launch("application/json")
+            },
+            onScanQRCode = { 
+                viewModel.closeImportMethodDialog()
+                // 检查相机权限
+                if (ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.CAMERA
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    val intent = Intent(context, QRCodeScanActivity::class.java)
+                    qrScanLauncher.launch(intent)
+                } else {
+                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                }
+            }
+        )
+    }
+
+    // 导入确认对话框
+    if (viewModel.showImportConfirmDialog) {
+        ImportConfirmDialog(
+            schedulesCount = viewModel.importedSchedulesCount,
+            onDismiss = { viewModel.closeImportConfirmDialog() },
+            onOverwrite = { viewModel.confirmImportOverwrite(context) },
+            onCreateNew = { newName -> viewModel.confirmImportAsNew(context, newName) }
+        )
+    }
+
+    // 导出方式选择对话框
+    if (viewModel.showExportMethodDialog) {
+        ExportMethodDialog(
+            onDismiss = { viewModel.closeExportMethodDialog() },
+            onExportJson = { 
+                viewModel.closeExportMethodDialog()
+                val fileName = "timetable_${System.currentTimeMillis()}.json"
+                fileSaverLauncher.launch(fileName)
+            },
+            onExportQRCode = { 
+                viewModel.closeExportMethodDialog()
+                viewModel.exportToQRCode(context)
+            }
+        )
+    }
+    
+    // 二维码显示对话框
+    if (viewModel.exportedQRCode != null) {
+        QRCodeDialog(
+            qrCodeBitmap = viewModel.exportedQRCode,
+            onDismiss = { viewModel.clearImportExportMessage() }
+        )
+    }
+    
+    // 导入导出结果对话框
+    viewModel.importExportMessage?.let { message ->
+        if (viewModel.exportedQRCode == null) {
+            if (viewModel.isImportOperation) {
+                // 导入操作
+                ImportResultDialog(
+                    success = viewModel.importExportSuccess,
+                    message = message,
+                    schedulesCount = viewModel.importedSchedulesCount,
+                    onDismiss = { viewModel.clearImportExportMessage() }
+                )
+            } else {
+                // 导出操作
+                ExportResultDialog(
+                    success = viewModel.importExportSuccess,
+                    message = message,
+                    onDismiss = { viewModel.clearImportExportMessage() }
+                )
+            }
+        }
+    }
+
     if (viewModel.showAboutDialog) {
         AboutDialog(
             onDismiss = { viewModel.closeAboutDialog() },
@@ -326,7 +466,7 @@ fun MainScreen() {
         is UpdateDialogState.Available -> {
             AutoUpdateDialog(
                 releaseInfo = state.releaseInfo,
-                currentVersion = "0.8beta",
+                currentVersion = "0.9beta",
                 onDownload = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.releaseInfo.htmlUrl))
                     context.startActivity(intent)
@@ -429,6 +569,7 @@ private fun TimetableTopBar(
     fontColor: Color,
     onMenuClick: () -> Unit,
     onSyncCalendarClick: () -> Unit,
+    onImportExportClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onAboutClick: () -> Unit
 ) {
@@ -456,6 +597,14 @@ private fun TimetableTopBar(
                             onSyncCalendarClick()
                         },
                         leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导入/导出") },
+                        onClick = {
+                            showDropdownMenu = false
+                            onImportExportClick()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("设置") },
@@ -677,7 +826,7 @@ private fun AboutDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "v0.8beta",
+                    "v0.9beta",
                     fontSize = 14.sp,
                     color = Color.Gray.copy(alpha = 0.7f)
                 )
